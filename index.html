@@ -489,31 +489,33 @@ function rrt(){
 // Cell Events
 function bindCells(tid,type){
     document.querySelectorAll('#'+tid+' .cell').forEach(c=>{
-        let timer=null,startX=0,startY=0,moved=false,validTap=false;
+        let timer=null,startX=0,startY=0,moved=false,longPressed=false;
         c.addEventListener('pointerdown',e=>{
             e.preventDefault();e.stopPropagation();
             c.setPointerCapture(e.pointerId);
-            startX=e.clientX;startY=e.clientY;moved=false;validTap=false;
+            startX=e.clientX;startY=e.clientY;moved=false;longPressed=false;
             timer=setTimeout(()=>{
                 if(!moved){
-                    validTap=true;
+                    longPressed=true;
+                    // Long press = decrement (-1)
                     if(type==='m')mv(c.dataset.a,c.dataset.m);
                     else mr(c.dataset.a,c.dataset.d);
                 }
                 timer=null;
-            },50);
+            },400);
         },{passive:false});
         c.addEventListener('pointermove',e=>{
             if(Math.abs(e.clientX-startX)>15||Math.abs(e.clientY-startY)>15)moved=true;
         });
         c.addEventListener('pointerup',e=>{
             e.preventDefault();e.stopPropagation();
-            if(timer&&!moved&&validTap){
+            if(timer){
                 clearTimeout(timer);timer=null;
+            }
+            // Short tap = increment (+1)
+            if(!moved&&!longPressed){
                 if(type==='m')pv(c.dataset.a,c.dataset.m);
                 else pr(c.dataset.a,c.dataset.d);
-            }else if(timer){
-                clearTimeout(timer);timer=null;
             }
         },{passive:false});
         c.addEventListener('pointercancel',()=>{if(timer){clearTimeout(timer);timer=null}});
@@ -730,10 +732,16 @@ function generatePDF(){
         const d=A.map(a=>[trChar(a.ad)].concat(M.map(m=>gv(a.id,m.id)||'-'),[tv(a.id)]));
         doc.autoTable({startY:28,head:[h],body:d,theme:'grid',headStyles:{fillColor:[59,130,246],fontSize:6,cellPadding:1.5},bodyStyles:{fontSize:7,cellPadding:1.5,halign:'center'},columnStyles:{0:{halign:'left',fontStyle:'bold'}},margin:{left:5,right:5}});
 
-        const ry=doc.lastAutoTable.finalY+8;
+        // Rotasyon tablosu yeni sayfada
+        doc.addPage();
+        doc.setFontSize(18);doc.setTextColor(245,158,11);
+        doc.text('ROTASYON TABLOSU',148,15,{align:'center'});
+        doc.setFontSize(10);doc.setTextColor(100);
+        doc.text(new Date().toLocaleDateString('tr-TR'),148,22,{align:'center'});
+
         const rh=['ASISTAN'].concat(DM.map(d=>trChar(d.ad)),['TOP']);
         const rd=A.map(a=>[trChar(a.ad)].concat(DM.map(d=>gr(a.id,d.id)||'-'),[tr(a.id)]));
-        doc.autoTable({startY:ry,head:[rh],body:rd,theme:'grid',headStyles:{fillColor:[245,158,11],fontSize:7},bodyStyles:{fontSize:8,halign:'center'},columnStyles:{0:{halign:'left',fontStyle:'bold'}},margin:{left:5},tableWidth:140});
+        doc.autoTable({startY:28,head:[rh],body:rd,theme:'grid',headStyles:{fillColor:[245,158,11],fontSize:7},bodyStyles:{fontSize:8,halign:'center'},columnStyles:{0:{halign:'left',fontStyle:'bold'}},margin:{left:5,right:5}});
 
         doc.save('KBB_'+new Date().toISOString().split('T')[0]+'.pdf');
         toast('PDF indirildi!');
@@ -744,20 +752,50 @@ function generatePDF(){
 function generateDOCX(){
     try{
         const date=new Date().toLocaleDateString('tr-TR');
-        let html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>KBB Vaka Takip</title><style>body{font-family:Arial,sans-serif;color:#000;background:#fff}h1{text-align:center;color:#3b82f6;border-bottom:3px solid #3b82f6;padding:10px}table{width:100%;border-collapse:collapse;margin-bottom:20px}th{background:#3b82f6;color:#fff;padding:8px;text-align:center;border:1px solid #333}td{padding:6px;border:1px solid #ccc;text-align:center}td:first-child{text-align:left;font-weight:bold}h2{color:#f59e0b;border-bottom:2px solid #f59e0b;padding:8px;margin-top:20px}.title-date{text-align:center;color:#666;margin-bottom:20px}</style></head><body>';
+        const colCount = M.length + 2; // AD + ameliyatlar + TOPLAM
+        const colCountR = DM.length + 2;
+        // Calculate column widths to fit A4 landscape
+        const nameColW = '80px';
+        const dataColW = Math.max(30, Math.floor(650 / (colCount - 1))) + 'px';
+        const dataColWR = Math.max(50, Math.floor(650 / (colCountR - 1))) + 'px';
+        
+        let html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>KBB Vaka Takip</title><style>';
+        html+='@page{size:landscape;margin:10mm 8mm}';
+        html+='body{font-family:Arial,sans-serif;color:#000;background:#fff}';
+        html+='h1{text-align:center;color:#3b82f6;border-bottom:3px solid #3b82f6;padding:10px;font-size:16px}';
+        html+='table{width:100%;border-collapse:collapse;margin-bottom:10px;table-layout:fixed}';
+        html+='th{background:#3b82f6;color:#fff;padding:3px 2px;text-align:center;border:1px solid #333;font-size:7px;word-wrap:break-word;overflow:hidden}';
+        html+='td{padding:3px 2px;border:1px solid #ccc;text-align:center;font-size:8px}';
+        html+='td:first-child{text-align:left;font-weight:bold;font-size:7px}';
+        html+='h2{color:#f59e0b;border-bottom:2px solid #f59e0b;padding:8px;margin-top:10px;font-size:14px}';
+        html+='.title-date{text-align:center;color:#666;margin-bottom:10px;font-size:10px}';
+        html+='.page-break{page-break-before:always}';
+        html+='</style></head><body>';
+        
+        // PAGE 1: Vaka Tablosu
         html+='<h1>KBB VAKA TAKİP</h1><div class="title-date">'+date+'</div>';
-        html+='<h2>Vaka Tablosu</h2><table><thead><tr><th>ASISTAN</th>';
+        html+='<h2>Vaka Tablosu</h2><table><colgroup><col style="width:'+nameColW+'">';
+        for(let i=0;i<M.length;i++) html+='<col style="width:'+dataColW+'">';
+        html+='<col style="width:'+dataColW+'"></colgroup>';
+        html+='<thead><tr><th>ASISTAN</th>';
         M.forEach(m=>html+='<th>'+m.ad+'</th>');
-        html+='<th style="background:#3b82f6">TOPLAM</th></tr></thead><tbody>';
+        html+='<th style="background:#3b82f6">TOP</th></tr></thead><tbody>';
         A.forEach(a=>{
             html+='<tr><td>'+a.ad+'</td>';
             M.forEach(m=>html+='<td>'+(gv(a.id,m.id)||'-')+'</td>');
             html+='<td style="background:#e0f2fe;font-weight:bold">'+tv(a.id)+'</td></tr>';
         });
         html+='</tbody></table>';
-        html+='<h2>Rotasyon Tablosu</h2><table><thead><tr><th>ASISTAN</th>';
-        DM.forEach(d=>html+='<th>'+d.ad+'</th>');
-        html+='<th style="background:#f59e0b;color:#fff">TOPLAM</th></tr></thead><tbody>';
+        
+        // PAGE 2: Poliklinik/Rotasyon Tablosu
+        html+='<div class="page-break"></div>';
+        html+='<h1>KBB VAKA TAKİP</h1><div class="title-date">'+date+'</div>';
+        html+='<h2>Rotasyon Tablosu</h2><table><colgroup><col style="width:'+nameColW+'">';
+        for(let i=0;i<DM.length;i++) html+='<col style="width:'+dataColWR+'">';
+        html+='<col style="width:'+dataColWR+'"></colgroup>';
+        html+='<thead><tr><th style="background:#f59e0b;color:#fff">ASISTAN</th>';
+        DM.forEach(d=>html+='<th style="background:#f59e0b;color:#fff">'+d.ad+'</th>');
+        html+='<th style="background:#f59e0b;color:#fff">TOP</th></tr></thead><tbody>';
         A.forEach(a=>{
             html+='<tr><td>'+a.ad+'</td>';
             DM.forEach(d=>html+='<td>'+(gr(a.id,d.id)||'-')+'</td>');
